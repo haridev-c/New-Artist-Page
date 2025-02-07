@@ -1,3 +1,4 @@
 # ignore all node modules folder irrespective of where the directory is present in the project structure
 **/node_modules/**
-.gitignore
+# ignore .env file from the whole project
+.env

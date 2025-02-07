@@ -1,174 +1,246 @@
-import { useState } from "react";
-import axios from "axios";
+// Desc: Admin page to upload products to the database
 
-function AdminPage() {
-  const [category, setCategory] = useState("Pencil Portrait");
-  const [image, setImage] = useState(null);
-  const [customWorks, setCustomWorks] = useState("");
-  const [workType, setWorkType] = useState("Single");
-  const [paperSize, setPaperSize] = useState("A4");
-  const [price, setPrice] = useState(0);
+// redux imports
+import { useUploadProductMutation } from "@/app/apiSlice";
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const formData = new FormData();
-    formData.append("image", image);
-    formData.append("category", category);
-    formData.append("customWorks", customWorks);
-    formData.append("workType", workType);
-    formData.append("paperSize", paperSize);
-    formData.append("price", price);
+import { useForm, useWatch } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 
-    axios
-      .post("http://localhost:5050/api/products/upload", formData)
-      .then((result) => {
-        console.log(result);
-        window.location.reload();
+// Shadcn imports
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+
+// Zod schema definition
+const formSchema = z
+  .object({
+    category: z.string({ required_error: "Category is required" }),
+    customWorks: z.string().optional(),
+    image: z
+      .instanceof(FileList)
+      .refine((file) => file?.length == 1, "File is required."),
+    paperSize: z.string().optional(),
+    price: z
+      .string()
+      .refine((val) => !isNaN(parseFloat(val)), {
+        message: "Price must be a valid number",
       })
-      .catch((err) => {
-        console.log(err);
+      .transform((val) => parseFloat(val))
+      .refine((val) => val <= 10000, {
+        message: "Price must be less than 10,000",
+      }),
+  })
+  .refine(
+    (data) => {
+      // Custom works category must have customWorks field
+      if (data.category === "Custom Works") {
+        return data.customWorks !== "";
+      }
+      return true;
+    },
+    {
+      message: "Please enter a custom work type",
+      path: ["customWorks"],
+    },
+  )
+  .refine(
+    (data) => {
+      // Paper size must be selected for all categories except Custom Works
+      if (data.category !== "Custom Works") {
+        return data.paperSize !== "";
+      }
+      return true;
+    },
+    {
+      message: "Please select a paper size",
+      path: ["paperSize"],
+    },
+  );
+
+// AdminPage component
+function AdminPage() {
+  // Initialize the form
+  const form = useForm({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      category: "",
+      customWorks: "",
+      image: undefined,
+      paperSize: "",
+      price: "",
+    },
+  });
+  // Watch the category field
+  const category = useWatch({ control: form.control, name: "category" });
+
+  const { toast } = useToast();
+
+  const [uploadProduct] = useUploadProductMutation();
+
+  const onSubmit = async (data) => {
+    try {
+      console.log(data);
+      // Create a FormData object to send the file
+      const formData = new FormData();
+      formData.append("category", data.category);
+      formData.append("customWorks", data.customWorks);
+      formData.append("image", data.image[0]);
+      formData.append("paperSize", data.paperSize);
+      formData.append("price", data.price);
+
+      const responseData = await uploadProduct(formData).unwrap();
+      console.log(responseData);
+      toast({
+        title: "Product added successfully",
       });
+      form.reset();
+    } catch (error) {
+      console.log("Error submitting the form");
+      console.error(error);
+    }
   };
 
   return (
     <>
-      <div className="container mt-5 text-center">
-        <h1>Admin Page</h1>
-        <div className="container mt-3 border">
-          <h4 className="m-4">Add a New Product</h4>
+      <h1 className="my-8 text-center text-5xl font-bold text-primaryBlue">
+        Admin Page
+      </h1>
 
-          {/* Start of Form */}
-          <form onSubmit={handleSubmit}>
-            <div className="text-start">
-              {/* Select the category of product */}
-              <div className="row align-items-center">
-                <div className="col">
-                  <label
-                    htmlFor="selectCategory"
-                    className="form-label align-middle"
-                  >
-                    Select Category
-                  </label>
-                </div>
-                <div className="col">
-                  <select
-                    id="selectCategory"
-                    className="form-select"
-                    onChange={(e) => setCategory(e.target.value)}
-                  >
-                    <option value="Pencil Portrait">Pencil Portrait</option>
-                    <option value="Color Portrait">Color Portrait</option>
-                    <option value="Caricature">Caricature</option>
-                    <option value="Custom Works">Custom Works</option>
-                  </select>
-                </div>
-              </div>
+      <Form {...form}>
+        <form
+          onSubmit={form.handleSubmit(onSubmit)}
+          className="m-auto space-y-8 px-6 sm:w-1/2"
+          encType="multipart/form-data"
+        >
+          {/* Category selection */}
+          <FormField
+            control={form.control}
+            name="category"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Category</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="Pencil Portrait">
+                      Pencil Portrait
+                    </SelectItem>
+                    <SelectItem value="Color Portrait">
+                      Color Portrait
+                    </SelectItem>
+                    <SelectItem value="Caricature">Caricature</SelectItem>
+                    <SelectItem value="Custom Works">Custom Works</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-              <div className="row">
-                <div className="col">
-                  <label htmlFor="caricatureType" className="form-label">
-                    Enter Custom Work
-                  </label>
-                </div>
-                <div className="col">
-                  <input
-                    type="text"
-                    id="caricatureType"
-                    className="form-control"
-                    onChange={(e) => setCustomWorks(e.target.value)}
-                  />
-                </div>
-              </div>
+          {/* Only show if custom works category is selected */}
+          {category === "Custom Works" && (
+            <FormField
+              control={form.control}
+              name="customWorks"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Enter custom work type</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Custom work type" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
-              {/* Select File */}
-              <div className="row">
-                <div className="col">
-                  <label htmlFor="file" className="form-label">
-                    Upload Image
-                  </label>
-                </div>
-                <div className="col">
-                  <input
-                    className="form-control"
+          {/* Image upload */}
+          <FormField
+            control={form.control}
+            name="image"
+            render={() => (
+              <FormItem>
+                <FormLabel>Upload Image</FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder="Upload image file"
                     type="file"
-                    name=""
-                    id=""
-                    onChange={(e) => setImage(e.target.files[0])}
+                    {...form.register("image")}
                   />
-                </div>
-              </div>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-              {/* Select Work Type */}
-              <div className="row">
-                <div className="col">
-                  <label htmlFor="type" className="form-label">
-                    Select work type
-                  </label>
-                </div>
-                <div className="col" id="type">
-                  <select
-                    className="form-select"
-                    id="type"
-                    onChange={(e) => setWorkType(e.target.value)}
-                  >
-                    <option value="Single">Single</option>
-                    <option value="Couple">Couple</option>
-                    <option value="Single Line Drawing">
-                      Single Line Drawing
-                    </option>
-                  </select>
-                </div>
-              </div>
+          {/* Paper size selection
+          Dont show if custom works category is selected
+          */}
+          {category !== "Custom Works" && (
+            <FormField
+              control={form.control}
+              name="paperSize"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Paper Size</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a paper size" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="A4">A4</SelectItem>
+                      <SelectItem value="A3">A3</SelectItem>
+                      <SelectItem value="Small">Single Line Drawing</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
-              {/* Select Page Size */}
-              <div className="row">
-                <div className="col">
-                  <label htmlFor="pageSize" className="form-label">
-                    Select Paper Size
-                  </label>
-                </div>
+          {/* Price input */}
+          <FormField
+            control={form.control}
+            name="price"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Price</FormLabel>
+                <FormControl>
+                  <Input placeholder="Enter price" type="number" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-                <div className="col">
-                  <select
-                    id="pageSize"
-                    className="form-select"
-                    onChange={(e) => setPaperSize(e.target.value)}
-                  >
-                    <option value="A4">A4</option>
-                    <option value="A3">A3</option>
-                    <option value="Small">Single Line Drawing</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Enter Price */}
-              <div className="row">
-                <div className="col">
-                  <label htmlFor="price" className="form-label">
-                    Enter price
-                  </label>
-                </div>
-                <div className="col">
-                  <input
-                    type="number"
-                    className="form-control"
-                    onChange={(e) => setPrice(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              {/* Submit button */}
-              <div className="row justify-content-center my-3">
-                <div className="col-auto">
-                  <button type="submit" className="btn btn-success">
-                    Add
-                  </button>
-                </div>
-              </div>
-            </div>
-          </form>
-        </div>
-      </div>
+          <Button className="w-full" type="submit">
+            Submit
+          </Button>
+        </form>
+      </Form>
     </>
   );
 }
